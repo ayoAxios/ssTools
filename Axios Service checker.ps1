@@ -48,13 +48,7 @@ if ($drives) {
         $fs = $drive.FileSystem -as [string]
         if (-not $fs) { $fs = "N/A" }
 
-        if ($drive.FreeSpace -and $drive.Size -and $drive.Size -gt 0) {
-            $freeStr = "{0:N0} bytes free" -f $drive.FreeSpace
-        } else {
-            $freeStr = "N/A"
-        }
-
-        Write-Host ("  {0,-4}  FileSystem: {1,-8}  FreeSpace: {2}" -f $drive.DeviceID, $fs, $freeStr) -ForegroundColor Green
+        Write-Host ("  {0,-4}  FileSystem: {1,-8} " -f $drive.DeviceID, $fs,) -ForegroundColor Green
     }
 
     Write-Host "└────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
@@ -340,12 +334,12 @@ if (Test-Path $prefetchPath) {
     Write-Host ""
     Write-Host "  Prefetch folder not found at: $prefetchPath" -ForegroundColor Red
 }
-Write-Host "└───────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+Write-Host "└──────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
 
 try {
     $recycleBinPath = "$env:SystemDrive" + '\$Recycle.Bin'
     Write-Host ""
-    Write-Host "┌─ RECYCLE BIN ────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host "┌─ RECYCLE BIN ─────────────────────────────────────────────────────┐" -ForegroundColor Cyan
 
     if (Test-Path $recycleBinPath) {
         $recycleBinFolder = Get-Item -LiteralPath $recycleBinPath -Force
@@ -440,3 +434,4 @@ Write-Host "╔═════════════════════�
 Write-Host ("║ {0,-70} ║" -f "Check Complete") -ForegroundColor Magenta
 Write-Host ("║ {0,-70} ║" -f "Thanks for using") -ForegroundColor Magenta
 Write-Host "╚════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+
