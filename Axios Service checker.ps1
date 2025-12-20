@@ -42,16 +42,17 @@ try {
 $drives = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -ne 5 }
 if ($drives) {
     Write-Host ""
-    Write-Host "┌─ CONNECTED DRIVES ─────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host "┌─ CONNECTED DRIVES ────────────────────────────────────────────┐" -ForegroundColor Cyan
 
-    foreach ($drive in $drives) {
-        $fs = $drive.FileSystem -as [string]
-        if (-not $fs) { $fs = "N/A" }
+foreach ($drive in $drives) {
+    $fs = $drive.FileSystem -as [string]
+    if (-not $fs) { $fs = "N/A" }
 
-        Write-Host ("  {0,-4}  FileSystem: {1,-8} " -f $drive.DeviceID, $fs,) -ForegroundColor Green
-    }
+    Write-Host ("  {0,-4}  FileSystem: {1,-8}" -f $drive.DeviceID, $fs) -ForegroundColor Green
+}
 
-    Write-Host "└────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "└───────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+
 }
 
 Write-Host ""
