@@ -1,12 +1,16 @@
 Write-Host ""
 Write-Host @"
-   _____         .__                 _________                  .__               _________ .__                   __                 
-  /  _  \ ___  __|__| ____  ______  /   _____/ ______________  _|__| ____  ____   \_   ___ \|  |__   ____   ____ |  | __ ___________ 
- /  /_\  \\  \/  /  |/  _ \/  ___/  \_____  \_/ __ \_  __ \  \/ /  |/ ___\/ __ \  /    \  \/|  |  \_/ __ \_/ ___\|  |/ // __ \_  __ \
-/    |    \>    <|  (  <_> )___ \   /        \  ___/|  | \/\   /|  \  \__\  ___/  \     \___|   Y  \  ___/\  \___|    <\  ___/|  | \/
-\____|__  /__/\_ \__|\____/____  > /_______  /\___  >__|    \_/ |__|\___  >___  >  \______  /___|  /\___  >\___  >__|_ \\___  >__|   
-        \/      \/             \/          \/     \/                    \/    \/          \/     \/     \/     \/     \/    \/       
-                                                                                                                                                                                                                              
+  ______                                  __                                      __                            __                           
+ /      \                                /  |                                    /  |                          /  |                          
+/$$$$$$  |  ______    ______   __     __ $$/   _______   ______          _______ $$ |____    ______    _______ $$ |   __   ______    ______  
+$$ \__$$/  /      \  /      \ /  \   /  |/  | /       | /      \        /       |$$      \  /      \  /       |$$ |  /  | /      \  /      \ 
+$$      \ /$$$$$$  |/$$$$$$  |$$  \ /$$/ $$ |/$$$$$$$/ /$$$$$$  |      /$$$$$$$/ $$$$$$$  |/$$$$$$  |/$$$$$$$/ $$ |_/$$/ /$$$$$$  |/$$$$$$  |
+ $$$$$$  |$$    $$ |$$ |  $$/  $$  /$$/  $$ |$$ |      $$    $$ |      $$ |      $$ |  $$ |$$    $$ |$$ |      $$   $$<  $$    $$ |$$ |  $$/ 
+/  \__$$ |$$$$$$$$/ $$ |        $$ $$/   $$ |$$ \_____ $$$$$$$$/       $$ \_____ $$ |  $$ |$$$$$$$$/ $$ \_____ $$$$$$  \ $$$$$$$$/ $$ |      
+$$    $$/ $$       |$$ |         $$$/    $$ |$$       |$$       |      $$       |$$ |  $$ |$$       |$$       |$$ | $$  |$$       |$$ |      
+ $$$$$$/   $$$$$$$/ $$/           $/     $$/  $$$$$$$/  $$$$$$$/        $$$$$$$/ $$/   $$/  $$$$$$$/  $$$$$$$/ $$/   $$/  $$$$$$$/ $$/       
+                                                                                                                                             
+                                                                                                                                                                                                                                                                                                                                                                     
 "@ -ForegroundColor Magenta
 
 
@@ -31,10 +35,10 @@ Write-Host ""
 try {
     $bootTime = (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime
     $uptime = (Get-Date) - $bootTime
-    Write-Host "┌─ SYSTEM BOOT INFO ────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host " SYSTEM BOOT INFO " -ForegroundColor Cyan
     Write-Host ("  Last Boot : {0}" -f $bootTime.ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor White
     Write-Host ("  Uptime    : {0} days, {1:D2}:{2:D2}:{3:D2}" -f $uptime.Days, $uptime.Hours, $uptime.Minutes, $uptime.Seconds) -ForegroundColor Green
-    Write-Host "└───────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+
 } catch {
     Write-Host "Unable to retrieve boot time information" -ForegroundColor Red
 }
@@ -42,7 +46,7 @@ try {
 $drives = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -ne 5 }
 if ($drives) {
     Write-Host ""
-    Write-Host "┌─ CONNECTED DRIVES ────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host " CONNECTED DRIVES " -ForegroundColor Cyan
 
 foreach ($drive in $drives) {
     $fs = $drive.FileSystem -as [string]
@@ -51,12 +55,12 @@ foreach ($drive in $drives) {
     Write-Host ("  {0,-4}  FileSystem: {1,-8}" -f $drive.DeviceID, $fs) -ForegroundColor Green
 }
 
-    Write-Host "└───────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+
 
 }
 
 Write-Host ""
-Write-Host "┌─ SERVICE STATUS ─────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+Write-Host "SERVICE STATUS" -ForegroundColor Cyan
 
 $services = @(
     @{Name = "SysMain"; DisplayName = "SysMain"},
@@ -109,10 +113,9 @@ foreach ($svc in $services) {
         Write-Host ("  {0,-12} {1,-40} {2}" -f $svc.Name, "Not Found", "Stopped") -ForegroundColor Yellow
     }
 }
-Write-Host "└──────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
 
 Write-Host ""
-Write-Host "┌─ REGISTRY CHECKS ─────────────────────────────────────────────────┐" -ForegroundColor Cyan
+Write-Host " REGISTRY CHECKS" -ForegroundColor Cyan
 
 $settings = @(
     @{ Name = "CMD"; Path = "HKCU:\Software\Policies\Microsoft\Windows\System"; Key = "DisableCMD"; Warning = "Disabled"; Safe = "Available" },
@@ -132,7 +135,6 @@ foreach ($s in $settings) {
         Write-Host $($s.Safe) -ForegroundColor Green
     }
 }
-Write-Host "└───────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
 
 function Check-EventLog {
     param ($logName, $eventID, $message)
@@ -188,7 +190,7 @@ function Check-DeviceDeleted {
 }
 
 Write-Host ""
-Write-Host "┌─ EVENT LOGS ──────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+Write-Host "EVENT LOGS " -ForegroundColor Cyan
 
 Check-EventLog "Application" 3079 "Checking for USN Journal Deletion"
 Check-RecentEventLog "System" @(104, 1102) "Suspicous Event Logs "
@@ -196,12 +198,12 @@ Check-EventLog "System" 1074 "Last PC Shutdown"
 Check-EventLog "Security" 4616 "System time changed"
 Check-EventLog "System" 6005 "Event Log Service started"
 Check-DeviceDeleted
-Write-Host "└───────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+
 
 $prefetchPath = "$env:SystemRoot\Prefetch"
 if (Test-Path $prefetchPath) {
     Write-Host ""
-    Write-Host "┌─ PREFETCH INTEGRITY ─────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host " PREFETCH INTEGRITY " -ForegroundColor Cyan
 
     $files = Get-ChildItem -Path $prefetchPath -Filter *.pf -Force -ErrorAction SilentlyContinue
     if (-not $files) {
@@ -335,12 +337,11 @@ if (Test-Path $prefetchPath) {
     Write-Host ""
     Write-Host "  Prefetch folder not found at: $prefetchPath" -ForegroundColor Red
 }
-Write-Host "└──────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
 
 try {
     $recycleBinPath = "$env:SystemDrive" + '\$Recycle.Bin'
     Write-Host ""
-    Write-Host "┌─ RECYCLE BIN ─────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host " RECYCLE BIN" -ForegroundColor Cyan
 
     if (Test-Path $recycleBinPath) {
         $recycleBinFolder = Get-Item -LiteralPath $recycleBinPath -Force
@@ -393,12 +394,12 @@ try {
     Write-Host "  Recycle Bin: Unable to access" -ForegroundColor Red
     Write-Host ("  Error: {0}" -f $($_.Exception.Message)) -ForegroundColor 'DarkRed'
 }
-Write-Host "└───────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+
 
     
  $consoleHistoryPath = "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt"
 
-Write-Host "┌─ Console Host History ──────────────────────────────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+Write-Host "Console Host History" -ForegroundColor Cyan
 
 try {
     if (Test-Path $consoleHistoryPath) {
@@ -425,8 +426,6 @@ try {
 } catch {
     Write-Host "  Error accessing system information: $($_.Exception.Message)" -ForegroundColor Red
 }
-
-Write-Host "└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
 
 
 
