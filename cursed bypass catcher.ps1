@@ -1,9 +1,3 @@
-# ============================================================
-#   FiveM PC Check - Suspicious Activity Scanner
-#   Run as Administrator for full results
-#   Usage: Right-click > Run with PowerShell (as Admin)
-# ============================================================
-
 $Host.UI.RawUI.WindowTitle = "FiveM PC Check - Suspicious Activity Scanner"
 $Host.UI.RawUI.BackgroundColor = "Black"
 Clear-Host
@@ -65,17 +59,9 @@ $suspiciousPipes = @("cheat","gta","fivem","hack","inject","pipe","cmd","shell",
 
 # ============================================================
 Write-Host ""
-Write-Host "   ██████╗ █████╗ ████████╗ ██████╗██╗  ██╗██╗███╗   ██╗ ██████╗ " -ForegroundColor Red
-Write-Host "  ██╔════╝██╔══██╗╚══██╔══╝██╔════╝██║  ██║██║████╗  ██║██╔════╝ " -ForegroundColor Red
-Write-Host "  ██║     ███████║   ██║   ██║     ███████║██║██╔██╗ ██║██║  ███╗" -ForegroundColor Yellow
-Write-Host "  ██║     ██╔══██║   ██║   ██║     ██╔══██║██║██║╚██╗██║██║   ██║" -ForegroundColor Yellow
-Write-Host "  ╚██████╗██║  ██║   ██║   ╚██████╗██║  ██║██║██║ ╚████║╚██████╔╝" -ForegroundColor Cyan
-Write-Host "   ╚═════╝╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ " -ForegroundColor Cyan
-Write-Host ""
 Write-Host "            catching cursed bypass.lol" -ForegroundColor White
-Write-Host "            PC Check - Suspicious Activity Scanner" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  Starting scan..." -ForegroundColor DarkGray
+Write-Host "  Starting scan for pipes n shiii  ..." -ForegroundColor DarkGray
 Start-Sleep -Milliseconds 500
 
 # ============================================================
