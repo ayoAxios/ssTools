@@ -17,7 +17,7 @@ if (-not (Test-Path $baseFolder)) {
 $tools = @(
     @{ Name = "everything";       Url = "https://www.voidtools.com/Everything-1.4.1.1032.x86-Setup.exe";                                                           FileName = "Everything-Setup.exe";              Zip = $false; Run = $false },
     @{ Name = "amcache parser";   Url = "https://github.com/Orbdiff/AmcacheParser/releases/download/v1.0/AmcacheParser.exe";                                       FileName = "AmcacheParser.exe";                 Zip = $false; Run = $false },
-    @{ Name = "prefetch parser";  Url = "https://github.com/Orbdiff/PrefetchView/releases/download/v1.6.1/PrefetchView++.exe";                                     FileName = "PrefetchView++.exe";                Zip = $false; Run = $false },
+    @{ Name = "prefetch parser";  Url = "https://github.com/Orbdiff/PrefetchView/releases/download/v1.6.5/pv++.exe";                                           FileName = "pv++.exe";                          Zip = $false; Run = $false },
     @{ Name = "bamparser";        Url = "https://github.com/Orbdiff/BAMReveal/releases/download/v1.2.5/BAMReveal.exe";                                             FileName = "BAMReveal.exe";                     Zip = $false; Run = $false },
     @{ Name = "journal trace";    Url = "https://github.com/spokwn/JournalTrace/releases/download/1.2/JournalTraceNormal.exe";                                     FileName = "JournalTraceNormal.exe";            Zip = $false; Run = $false },
     @{ Name = "system informer";  Url = "https://github.com/winsiderss/si-builds/releases/download/4.0.26048.2459/systeminformer-build-canary-setup.exe";          FileName = "systeminformer-setup.exe";          Zip = $false; Run = $false },
@@ -37,6 +37,26 @@ $tools = @(
        RunCmd = { param($folder)
            $exe = Get-ChildItem $folder -Recurse -Filter "INDXRipper.exe" | Select-Object -First 1 -ExpandProperty FullName
            if ($exe) { & $exe "//./C:" --deleted-dirs (Join-Path $folder "output.csv") }
+       }
+    },
+    @{ Name = "shimcache";         Url = "https://download.ericzimmermanstools.com/net9/AppCompatCacheParser.zip";                                                    FileName = "AppCompatCacheParser.zip";          Zip = $true;  Run = $true;
+       RunCmd = { param($folder)
+           $exe = Get-ChildItem $folder -Recurse -Filter "AppCompatCacheParser.exe" | Select-Object -First 1 -ExpandProperty FullName
+           if ($exe) {
+               Push-Location $folder
+               & $exe --csv .
+               Pop-Location
+           }
+       }
+    },
+    @{ Name = "srum";              Url = "https://download.ericzimmermanstools.com/net9/SrumECmd.zip";                                                                FileName = "SrumECmd.zip";                      Zip = $true;  Run = $true;
+       RunCmd = { param($folder)
+           $exe = Get-ChildItem $folder -Recurse -Filter "SrumECmd.exe" | Select-Object -First 1 -ExpandProperty FullName
+           if ($exe) {
+               Push-Location $folder
+               & $exe -f "C:\Windows\System32\sru\SRUDB.dat" --csv .
+               Pop-Location
+           }
        }
     }
 )
