@@ -54,8 +54,14 @@ $tools = @(
        RunCmd = { param($folder)
            $exe = Join-Path $folder "aspnetcore-runtime-9.0.14-win-x64.exe"
            if (Test-Path $exe) {
-               Write-Host "  Installing ASP.NET Core Runtime 9.0.14..." -ForegroundColor Yellow
-               Start-Process -FilePath $exe -ArgumentList "/install /quiet /norestart" -Wait
+               $installed = dotnet --list-runtimes 2>$null | Where-Object { $_ -match "Microsoft\.AspNetCore\.App 9\.0\.14" }
+               if ($installed) {
+                   Write-Host "  ASP.NET Core Runtime 9.0.14 already installed, skipping." -ForegroundColor Green
+               } else {
+                   Write-Host "  Installing ASP.NET Core Runtime 9.0.14..." -ForegroundColor Yellow
+                   Start-Process -FilePath $exe -ArgumentList "/install /quiet /norestart" -Wait
+                   Write-Host "  ASP.NET Core Runtime 9.0.14 installed." -ForegroundColor Green
+               }
            }
        }
     },
