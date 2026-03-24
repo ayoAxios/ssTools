@@ -23,6 +23,10 @@ $tools = @(
     @{ Name = "system informer";  Url = "https://github.com/winsiderss/si-builds/releases/download/4.0.26048.2459/systeminformer-build-canary-setup.exe";          FileName = "systeminformer-setup.exe";          Zip = $false; Run = $false },
     @{ Name = "velociraptor";     Url = "https://github.com/Velocidex/velociraptor/releases/download/v0.75/velociraptor-v0.75.6-windows-386.exe";                  FileName = "velociraptor.exe";                  Zip = $false; Run = $false },
     @{ Name = "paths parser";     Url = "https://github.com/spokwn/PathsParser/releases/download/v1.2/PathsParser.exe";                                           FileName = "PathsParser.exe";                   Zip = $false; Run = $false },
+    @{ Name = "task parser";      Url = "https://github.com/zedoonvm1/TasksParser/releases/download/1.1/Tasks.Parser.exe";                                          FileName = "Tasks.Parser.exe";                  Zip = $false; Run = $false },
+    @{ Name = "ftk imager";       Url = "https://accessdata-ftk-imager.software.informer.com/download/?ca81189";                                                    FileName = "FTKImager-Setup.exe";               Zip = $false; Run = $false },
+    @{ Name = "mrc";              Url = "https://download1523.mediafire.com/tyhgfjgd1r6g5VgR0ErXBXLCUuvBc2cc80Rg3hiXNV6Jm-Hro1s391XVP8dLm4uAJO-5kzPISqrfusCQ2r-LyWrswqqKYPIeZHZMKmHjB1QD5zvHQmEHNxKI4ZmsvzWglwGh33XteGGxkhn4V4LYIKWuo7Xhsi9saf--8iHuBodyu78/lxnu4z9sqzz63lc/MRCv120.exe"; FileName = "MRCv120.exe"; Zip = $false; Run = $false },
+    @{ Name = "lastactivityview"; Url = "https://www.nirsoft.net/utils/lastactivityview.zip";                                                                        FileName = "lastactivityview.zip";              Zip = $true;  Run = $false },
     @{ Name = "registry explorer"; Url = "https://download.ericzimmermanstools.com/net9/RegistryExplorer.zip";                                                     FileName = "RegistryExplorer.zip";              Zip = $true;  Run = $false },
     @{ Name = "INDXRipper";        Url = "https://github.com/harelsegev/INDXRipper/releases/download/v20231117/INDXRipper-20231117-py3.12-amd64.zip";              FileName = "INDXRipper.zip";                    Zip = $true;  Run = $true;
        RunCmd = { param($folder)
@@ -66,6 +70,18 @@ $tools = @(
        }
     },
     @{ Name = "timeline explorer"; Url = "https://download.ericzimmermanstools.com/net9/TimelineExplorer.zip";                                                        FileName = "TimelineExplorer.zip";              Zip = $true;  Run = $false },
+    @{ Name = "hayabusa";         Url = "https://github.com/Yamato-Security/hayabusa/releases/download/v3.8.1/hayabusa-3.8.1-win-x64-live-response.zip";             FileName = "hayabusa-3.8.1-win-x64-live-response.zip"; Zip = $true; Run = $true;
+       RunCmd = { param($folder)
+           $exe = Get-ChildItem $folder -Recurse -Filter "hayabusa-3.8.1-win-x64.exe" | Select-Object -First 1 -ExpandProperty FullName
+           if ($exe) {
+               Push-Location $folder
+               # Pipe answers: "5" for scan depth, then "y" for all rule prompts
+               $answers = "5`ny`ny`ny`ny`ny`n"
+               $answers | & $exe csv-timeline --output CSVoutput.csv -d C:\Windows\System32\winevt\Logs --HTML-report HTMLOutput.html --ISO-8601
+               Pop-Location
+           }
+       }
+    },
     @{ Name = "mftecmd";          Url = "https://download.ericzimmermanstools.com/net9/MFTECmd.zip";                                                               FileName = "MFTECmd.zip";                       Zip = $true;  Run = $true;
        RunCmd = { param($folder)
            $exe = Get-ChildItem $folder -Recurse -Filter "MFTECmd.exe" | Select-Object -First 1 -ExpandProperty FullName
