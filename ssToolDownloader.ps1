@@ -23,15 +23,6 @@ $tools = @(
     @{ Name = "system informer";  Url = "https://github.com/winsiderss/si-builds/releases/download/4.0.26048.2459/systeminformer-build-canary-setup.exe";          FileName = "systeminformer-setup.exe";          Zip = $false; Run = $false },
     @{ Name = "velociraptor";     Url = "https://github.com/Velocidex/velociraptor/releases/download/v0.75/velociraptor-v0.75.6-windows-386.exe";                  FileName = "velociraptor.exe";                  Zip = $false; Run = $false },
     @{ Name = "paths parser";     Url = "https://github.com/spokwn/PathsParser/releases/download/v1.2/PathsParser.exe";                                           FileName = "PathsParser.exe";                   Zip = $false; Run = $false },
-    @{ Name = "mftecmd";          Url = "https://download.ericzimmermanstools.com/net9/MFTECmd.zip";                                                               FileName = "MFTECmd.zip";                       Zip = $true;  Run = $true;
-       RunCmd = { param($folder)
-           $exe = Get-ChildItem $folder -Recurse -Filter "MFTECmd.exe" | Select-Object -First 1 -ExpandProperty FullName
-           if ($exe) {
-               $out = Join-Path $folder "output"; New-Item -ItemType Directory -Path $out -Force | Out-Null
-               & $exe -f "C:\`$Extend\`$UsnJrnl:`$J" -m "C:\`$MFT" --csv $out
-           }
-       }
-    },
     @{ Name = "registry explorer"; Url = "https://download.ericzimmermanstools.com/net9/RegistryExplorer.zip";                                                     FileName = "RegistryExplorer.zip";              Zip = $true;  Run = $false },
     @{ Name = "INDXRipper";        Url = "https://github.com/harelsegev/INDXRipper/releases/download/v20231117/INDXRipper-20231117-py3.12-amd64.zip";              FileName = "INDXRipper.zip";                    Zip = $true;  Run = $true;
        RunCmd = { param($folder)
@@ -56,6 +47,15 @@ $tools = @(
                Push-Location $folder
                & $exe -f "C:\Windows\System32\sru\SRUDB.dat" --csv .
                Pop-Location
+           }
+       }
+    },
+    @{ Name = "mftecmd";          Url = "https://download.ericzimmermanstools.com/net9/MFTECmd.zip";                                                               FileName = "MFTECmd.zip";                       Zip = $true;  Run = $true;
+       RunCmd = { param($folder)
+           $exe = Get-ChildItem $folder -Recurse -Filter "MFTECmd.exe" | Select-Object -First 1 -ExpandProperty FullName
+           if ($exe) {
+               $out = Join-Path $folder "output"; New-Item -ItemType Directory -Path $out -Force | Out-Null
+               & $exe -f "C:\`$Extend\`$UsnJrnl:`$J" -m "C:\`$MFT" --csv $out
            }
        }
     }
