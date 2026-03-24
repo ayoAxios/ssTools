@@ -50,6 +50,16 @@ $tools = @(
            }
        }
     },
+    @{ Name = "dotnet-aspnetcore-runtime"; Url = "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/9.0.14/aspnetcore-runtime-9.0.14-win-x64.exe"; FileName = "aspnetcore-runtime-9.0.14-win-x64.exe"; Zip = $false; Run = $true;
+       RunCmd = { param($folder)
+           $exe = Join-Path $folder "aspnetcore-runtime-9.0.14-win-x64.exe"
+           if (Test-Path $exe) {
+               Write-Host "  Installing ASP.NET Core Runtime 9.0.14..." -ForegroundColor Yellow
+               Start-Process -FilePath $exe -ArgumentList "/install /quiet /norestart" -Wait
+           }
+       }
+    },
+    @{ Name = "timeline explorer"; Url = "https://download.ericzimmermanstools.com/net9/TimelineExplorer.zip";                                                        FileName = "TimelineExplorer.zip";              Zip = $true;  Run = $false },
     @{ Name = "mftecmd";          Url = "https://download.ericzimmermanstools.com/net9/MFTECmd.zip";                                                               FileName = "MFTECmd.zip";                       Zip = $true;  Run = $true;
        RunCmd = { param($folder)
            $exe = Get-ChildItem $folder -Recurse -Filter "MFTECmd.exe" | Select-Object -First 1 -ExpandProperty FullName
@@ -115,6 +125,21 @@ $runspacePool.Close()
 $runspacePool.Dispose()
 
 Write-Host "`nAll downloads complete. Processing zips and running tools..." -ForegroundColor Cyan
+
+# ============================================================
+# Post-download: Run non-zip installers/executables first
+# ============================================================
+
+foreach ($tool in $tools | Where-Object { $_.Zip -eq $false -and $_.Run -eq $true }) {
+    $toolFolder = Join-Path $baseFolder $tool.Name
+    Write-Host "Running $($tool.Name)..." -ForegroundColor Yellow
+    try {
+        & $tool.RunCmd $toolFolder
+        Write-Host "  $($tool.Name) complete." -ForegroundColor Green
+    } catch {
+        Write-Host "  FAILED to run $($tool.Name): $_" -ForegroundColor Red
+    }
+}
 
 # ============================================================
 # Post-download: Extract zips and run tools sequentially
