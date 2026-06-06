@@ -9,7 +9,7 @@
 
 $ProgressPreference = 'SilentlyContinue'
 
-# ── Silent process killer (absolutely no output) ─────────────────────────────
+# ── recording killer  ─────────────────────────────
 
 $forbiddenProcesses = @(
     "chrome","firefox","msedge","opera","opera_gx","brave","vivaldi",
