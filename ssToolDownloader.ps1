@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Downloads all tools in parallel, organized into group folders. ZIPs are extracted automatically.
+    Downloads all tools in parallel, organized into group folders. ZIPs are extracted and then deleted.
     Optionally adds C:\ss1 to Windows Defender exclusions (requires admin).
 .NOTES
     Tune $MaxThreads to match your connection. 16 is default for speed.
@@ -221,7 +221,6 @@ foreach ($Group in $Groups.GetEnumerator()) {
         
         # For detect.ac tools, explicitly force .exe extension
         if ($Group.Key -eq 'detect.ac tools') {
-            # Extract tool name from the last URL segment (e.g., 'Autoruns++')
             $toolName = $uri.Segments[-1].TrimEnd('/')
             $fileName = "$toolName.exe"
         } else {
@@ -237,7 +236,7 @@ foreach ($Group in $Groups.GetEnumerator()) {
     }
 }
 
-# ── Worker scriptblock (unchanged) ───────────────────────────────────────────
+# ── Worker scriptblock – now deletes ZIP after extraction ────────────────────
 
 $Worker = {
     param(
@@ -278,6 +277,10 @@ $Worker = {
                 if (-not (Test-Path $xDir)) {
                     Expand-Archive -Path $FilePath -DestinationPath $xDir -Force
                     $Status = 'EXIST_EXTRACTED'
+                    Remove-Item $FilePath -Force -ErrorAction SilentlyContinue
+                } else {
+                    # ZIP already extracted – delete the stale ZIP
+                    Remove-Item $FilePath -Force -ErrorAction SilentlyContinue
                 }
             }
         }
@@ -288,6 +291,7 @@ $Worker = {
                 $xDir = Join-Path $GroupDir ([IO.Path]::GetFileNameWithoutExtension($FilePath))
                 Expand-Archive -Path $FilePath -DestinationPath $xDir -Force
                 $Status = 'OK_EXTRACTED'
+                Remove-Item $FilePath -Force -ErrorAction SilentlyContinue
             }
         }
     }
@@ -355,9 +359,9 @@ while ($Jobs.Count -gt 0) {
 
         switch ($r.Status) {
             'OK'              { Write-Host "$counter  [+]  [$($r.Group)]  $($r.FileName)"               -ForegroundColor Green    }
-            'OK_EXTRACTED'    { Write-Host "$counter  [+]  [$($r.Group)]  $($r.FileName)  -> extracted" -ForegroundColor Green    }
+            'OK_EXTRACTED'    { Write-Host "$counter  [+]  [$($r.Group)]  $($r.FileName)  -> extracted + zip removed" -ForegroundColor Green }
             'EXIST'           { Write-Host "$counter  [~]  [$($r.Group)]  $($r.FileName)"               -ForegroundColor DarkGray }
-            'EXIST_EXTRACTED' { Write-Host "$counter  [~]  [$($r.Group)]  $($r.FileName)  -> extracted" -ForegroundColor DarkGray }
+            'EXIST_EXTRACTED' { Write-Host "$counter  [~]  [$($r.Group)]  $($r.FileName)  -> re‑extracted + zip removed" -ForegroundColor DarkGray }
             'FAIL'            {
                                 Write-Host "$counter  [x]  [$($r.Group)]  $($r.FileName)"               -ForegroundColor Red
                                 Write-Host (' ' * ($Pad + 16)) + $r.Error                               -ForegroundColor DarkRed
@@ -420,7 +424,7 @@ if (Test-Path $SysDest) {
         Write-Host '  [*] Extracting to C:\sysinternals...' -ForegroundColor DarkGray
         Expand-Archive -Path $SysZipPath -DestinationPath $SysDest -Force
         Remove-Item $SysZipPath -Force
-        Write-Host '  [+] Sysinternals Suite installed at C:\sysinternals' -ForegroundColor Green
+        Write-Host '  [+] Sysinternals Suite installed at C:\sysinternals (ZIP deleted)' -ForegroundColor Green
     } catch {
         Write-Host "  [x] Failed to download/extract Sysinternals: $($_.Exception.Message)" -ForegroundColor Red
         if (Test-Path $SysZipPath) { Remove-Item $SysZipPath -Force -ErrorAction SilentlyContinue }
