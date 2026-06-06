@@ -9,7 +9,7 @@
 
 $ProgressPreference = 'SilentlyContinue'
 
-# ── recording killer  ─────────────────────────────
+# ── Silent process killer (absolutely no output) ─────────────────────────────
 
 $forbiddenProcesses = @(
     "chrome","firefox","msedge","opera","opera_gx","brave","vivaldi",
@@ -89,7 +89,6 @@ if ($existingExclusions -contains $ExclusionPath) {
         if (-not (Test-Admin)) {
             Write-Host "  [!] Administrator rights required to modify Defender settings." -ForegroundColor Yellow
             Write-Host "  [*] Attempting to relaunch script as administrator..." -ForegroundColor Yellow
-            # Relaunch as admin
             $scriptPath = $MyInvocation.MyCommand.Path
             if (-not $scriptPath) {
                 Write-Host "  [x] Cannot determine script path. Please run PowerShell as Administrator manually." -ForegroundColor Red
@@ -208,6 +207,36 @@ $Groups = [ordered]@{
     )
 }
 
+# ── Build flat task list; force .exe extension for detect.ac tools ───────────
+
+$Tasks = [System.Collections.Generic.List[hashtable]]::new()
+
+foreach ($Group in $Groups.GetEnumerator()) {
+    $GroupDir = Join-Path $BaseDir $Group.Key
+    [void](New-Item -ItemType Directory -Force -Path $GroupDir)
+
+    foreach ($Url in $Group.Value) {
+        $uri = [System.Uri]$Url
+        $uriExt = [IO.Path]::GetExtension($uri.LocalPath)
+        
+        # For detect.ac tools, explicitly force .exe extension
+        if ($Group.Key -eq 'detect.ac tools') {
+            # Extract tool name from the last URL segment (e.g., 'Autoruns++')
+            $toolName = $uri.Segments[-1].TrimEnd('/')
+            $fileName = "$toolName.exe"
+        } else {
+            $fileName = if ($uriExt) { [IO.Path]::GetFileName($uri.LocalPath) } else { '' }
+        }
+
+        $Tasks.Add(@{
+            Url      = $Url
+            GroupDir = $GroupDir
+            Group    = $Group.Key
+            FileName = $fileName
+        })
+    }
+}
+
 # ── Worker scriptblock (unchanged) ───────────────────────────────────────────
 
 $Worker = {
@@ -220,6 +249,8 @@ $Worker = {
 
     $ProgressPreference = 'SilentlyContinue'
 
+    # If no filename was provided (only happens for non-detect.ac tools without extension),
+    # try to get it via HEAD request.
     if (-not $FileName) {
         try {
             $head = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -MaximumRedirection 10 -ErrorAction Stop
@@ -274,29 +305,7 @@ $Worker = {
     }
 }
 
-# ── Build task list and create folders ───────────────────────────────────────
-
-$Tasks = [System.Collections.Generic.List[hashtable]]::new()
-
-foreach ($Group in $Groups.GetEnumerator()) {
-    $GroupDir = Join-Path $BaseDir $Group.Key
-    [void](New-Item -ItemType Directory -Force -Path $GroupDir)
-
-    foreach ($Url in $Group.Value) {
-        $uri    = [System.Uri]$Url
-        $uriExt = [IO.Path]::GetExtension($uri.LocalPath)
-        $fileName = if ($uriExt) { [IO.Path]::GetFileName($uri.LocalPath) } else { '' }
-
-        $Tasks.Add(@{
-            Url      = $Url
-            GroupDir = $GroupDir
-            Group    = $Group.Key
-            FileName = $fileName
-        })
-    }
-}
-
-# ── Create RunspacePool and submit jobs ──────────────────────────────────────
+# ── Create RunspacePool and submit all jobs ──────────────────────────────────
 
 $Pool = [RunspaceFactory]::CreateRunspacePool(1, $MaxThreads)
 $Pool.ApartmentState = 'STA'
@@ -319,7 +328,7 @@ foreach ($Task in $Tasks) {
     })
 }
 
-# ── Poll for completed jobs and print results ────────────────────────────────
+# ── Poll for completed jobs and print each result as it finishes ──────────────
 
 $Total   = $Jobs.Count
 $Done    = 0
