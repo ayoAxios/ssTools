@@ -66,6 +66,7 @@ $contatoreAnomalie = 0
 $anomalieLista = [System.Collections.Generic.List[PSCustomObject]]::new()
 $modificheRecenti = [System.Collections.Generic.List[string]]::new()
 $allPaths = [System.Collections.Generic.List[string]]::new()
+$recentlyModifiedSet = [System.Collections.Generic.HashSet[string]]::new()
 
 $outputDir = "C:\ss1"
 if (-not (Test-Path $outputDir)) {
@@ -84,6 +85,89 @@ function Get-ExecutablePathFromImagePath {
         return $firstToken
     }
     return $null
+}
+
+function Test-FileAnomalies {
+    param(
+        [string]$FilePath,
+        [string]$ServiceName,
+        [bool]$CheckMapping = $false
+    )
+    $anomalies = @()
+    if (-not (Test-Path $FilePath)) {
+        return $anomalies
+    }
+    $fileItem = Get-Item -Path $FilePath -ErrorAction SilentlyContinue
+    if (-not $fileItem) {
+        return $anomalies
+    }
+    $pathNorm = $FilePath.ToLower()
+    $pathiLegittimi = @(
+        "$env:SystemRoot\system32",
+        "$env:SystemRoot\syswow64",
+        "$env:SystemRoot\system32\spool",
+        "$env:SystemRoot\winsxs"
+    )
+    $pathOk = $pathiLegittimi | Where-Object { $pathNorm.StartsWith($_.ToLower()) }
+    if (-not $pathOk) { $anomalies += "SUSPICIOUS PATH" }
+
+    $sig = Get-AuthenticodeSignature -FilePath $FilePath -ErrorAction SilentlyContinue
+    if (-not $sig) {
+        $anomalies += "SIGNATURE NOT VERIFIABLE"
+    } elseif ($sig.Status -eq "NotSigned") {
+        $anomalies += "DLL NOT SIGNED"
+    } elseif ($sig.Status -ne "Valid") {
+        $anomalies += "INVALID SIGNATURE: $($sig.Status)"
+    } elseif ($sig.SignerCertificate.Subject -notlike "*Microsoft*") {
+        # We now suppress NON-MICROSOFT SIGNATURE entirely – do not add it
+    }
+
+    if ($CheckMapping -and $knownMappings.ContainsKey($ServiceName)) {
+        $expected = $knownMappings[$ServiceName]
+        if ($fileItem.Name.ToLower() -ne $expected.ToLower()) {
+            $anomalies += "DLL REPLACED (expected: $expected)"
+        }
+    } elseif ($CheckMapping -and -not $knownMappings.ContainsKey($ServiceName)) {
+        if ($fileItem.Name -notmatch "\.dll$") {
+            $anomalies += "ANOMALOUS EXTENSION: $($fileItem.Name)"
+        }
+    }
+    return $anomalies
+}
+
+function Add-Anomaly {
+    param(
+        [string]$ServiceName,
+        [string]$FilePath,
+        [string[]]$Issues,
+        [bool]$IsRecentlyModified = $false
+    )
+    if ($Issues.Count -eq 0) { return }
+
+    $alwaysShow = @("DLL REPLACED", "INVALID SIGNATURE", "DLL NOT SIGNED", "ANOMALOUS EXTENSION", "WEAK REGISTRY PERMISSIONS")
+    $filteredIssues = @()
+    foreach ($issue in $Issues) {
+        $isAlways = $false
+        foreach ($crit in $alwaysShow) {
+            if ($issue -match $crit) { $isAlways = $true; break }
+        }
+        if ($isAlways) {
+            $filteredIssues += $issue
+        } elseif ($IsRecentlyModified) {
+            $filteredIssues += $issue
+        }
+    }
+    if ($filteredIssues.Count -eq 0) { return }
+
+    $global:contatoreAnomalie++
+    $modTime = if (Test-Path $FilePath) { (Get-Item $FilePath).LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy") } else { "N/A (file not found)" }
+    $item = [PSCustomObject]@{
+        Servizio = $ServiceName
+        File     = $FilePath
+        Modifica = $modTime
+        Stato    = ($filteredIssues -join " | ")
+    }
+    $global:anomalieLista.Add($item)
 }
 
 foreach ($service in $services) {
@@ -109,6 +193,7 @@ foreach ($service in $services) {
 
             if ($lastWrite -and $lastWrite -ge $timeThreshold) {
                 $modificheRecenti.Add("$serviceName | $($lastWrite.ToString('HH:mm:ss dd/MM/yyyy'))")
+                $recentlyModifiedSet.Add($serviceName)
             }
         }
     } catch {}
@@ -122,56 +207,9 @@ foreach ($service in $services) {
                 $expandedPath = Join-Path "C:\Windows\System32" $expandedPath
             }
             $allPaths.Add($expandedPath)
-
-            $anomalie = @()
-            $fileItem = Get-Item -Path $expandedPath -ErrorAction SilentlyContinue
-
-            if (-not $fileItem) {
-                $anomalie += "FILE NOT FOUND"
-            } else {
-                $pathNorm = $expandedPath.ToLower()
-                $pathiLegittimi = @(
-                    "$env:SystemRoot\system32",
-                    "$env:SystemRoot\syswow64",
-                    "$env:SystemRoot\system32\spool",
-                    "$env:SystemRoot\winsxs"
-                )
-                $pathOk = $pathiLegittimi | Where-Object { $pathNorm.StartsWith($_.ToLower()) }
-                if (-not $pathOk) { $anomalie += "SUSPICIOUS PATH" }
-
-                $sig = Get-AuthenticodeSignature -FilePath $expandedPath -ErrorAction SilentlyContinue
-                if (-not $sig) {
-                    $anomalie += "SIGNATURE NOT VERIFIABLE"
-                } elseif ($sig.Status -eq "NotSigned") {
-                    $anomalie += "DLL NOT SIGNED"
-                } elseif ($sig.Status -ne "Valid") {
-                    $anomalie += "INVALID SIGNATURE: $($sig.Status)"
-                } elseif ($sig.SignerCertificate.Subject -notlike "*Microsoft*") {
-                    $anomalie += "NON-MICROSOFT SIGNATURE"
-                }
-
-                if ($knownMappings.ContainsKey($serviceName)) {
-                    if ($fileItem.Name.ToLower() -ne $knownMappings[$serviceName].ToLower()) {
-                        $anomalie += "DLL REPLACED (expected: $($knownMappings[$serviceName]))"
-                    }
-                } else {
-                    if ($fileItem.Name -notmatch "\.dll$") {
-                        $anomalie += "ANOMALOUS EXTENSION: $($fileItem.Name)"
-                    }
-                }
-            }
-
-            if ($anomalie.Count -gt 0) {
-                $contatoreAnomalie++
-                $dataModifica = if ($fileItem) { $fileItem.LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy") } else { "N/A (file not found)" }
-                $itemBlock = [PSCustomObject]@{
-                    Servizio = $serviceName
-                    File     = $expandedPath
-                    Modifica = $dataModifica
-                    Stato    = ($anomalie -join " | ")
-                }
-                $anomalieLista.Add($itemBlock)
-            }
+            $issues = Test-FileAnomalies -FilePath $expandedPath -ServiceName $serviceName -CheckMapping $true
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $expandedPath -Issues $issues -IsRecentlyModified $isRecent
         }
     }
 
@@ -184,14 +222,103 @@ foreach ($service in $services) {
                 $fullPath = Join-Path "C:\Windows\System32" $fullPath
             }
             $allPaths.Add($fullPath)
+            $issues = Test-FileAnomalies -FilePath $fullPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullPath -Issues $issues -IsRecentlyModified $isRecent
         }
+    }
+
+    $failCmd = (Get-ItemProperty -Path "$servicesPath\$serviceName" -Name FailureCommand -ErrorAction SilentlyContinue).FailureCommand
+    if ($failCmd) {
+        $exeFromFail = Get-ExecutablePathFromImagePath -imagePath $failCmd
+        if ($exeFromFail) {
+            $fullFailPath = [System.Environment]::ExpandEnvironmentVariables($exeFromFail)
+            if (-not (Split-Path $fullFailPath -Parent)) {
+                $fullFailPath = Join-Path "C:\Windows\System32" $fullFailPath
+            }
+            $allPaths.Add($fullFailPath)
+            $issues = Test-FileAnomalies -FilePath $fullFailPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullFailPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $perfPath = "$servicesPath\$serviceName\Performance"
+    if (Test-Path $perfPath) {
+        $perfLib = (Get-ItemProperty -Path $perfPath -Name Library -ErrorAction SilentlyContinue).Library
+        if ($perfLib) {
+            $fullPerfPath = [System.Environment]::ExpandEnvironmentVariables($perfLib)
+            if (-not (Split-Path $fullPerfPath -Parent)) {
+                $fullPerfPath = Join-Path "C:\Windows\System32" $fullPerfPath
+            }
+            $allPaths.Add($fullPerfPath)
+            $issues = Test-FileAnomalies -FilePath $fullPerfPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullPerfPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $acl = Get-Acl -Path "$servicesPath\$serviceName" -ErrorAction SilentlyContinue
+    if ($acl) {
+        $writeAccess = $false
+        foreach ($access in $acl.Access) {
+            if ($access.IdentityReference -match "BUILTIN\\Users|Everyone|NT AUTHORITY\\Authenticated Users") {
+                if ($access.RegistryRights -match "WriteKey|SetValue|CreateSubKey") {
+                    $writeAccess = $true
+                    break
+                }
+            }
+        }
+        if ($writeAccess) {
+            $issues = @("WEAK REGISTRY PERMISSIONS – NON-ADMIN CAN MODIFY")
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath "N/A (registry key)" -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+}
+
+$diagTestHooks = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\TestHooks"
+if (Test-Path $diagTestHooks) {
+    $diagDll1 = (Get-ItemProperty -Path $diagTestHooks -Name TestUndockedAggregatorDll -ErrorAction SilentlyContinue).TestUndockedAggregatorDll
+    if ($diagDll1) {
+        $fullDiagPath = [System.Environment]::ExpandEnvironmentVariables($diagDll1)
+        if (-not (Split-Path $fullDiagPath -Parent)) {
+            $fullDiagPath = Join-Path "C:\Windows\System32" $fullDiagPath
+        }
+        $allPaths.Add($fullDiagPath)
+        $issues = Test-FileAnomalies -FilePath $fullDiagPath -ServiceName "DiagTrack_TestHook" -CheckMapping $false
+        Add-Anomaly -ServiceName "DiagTrack (Undocked)" -FilePath $fullDiagPath -Issues $issues -IsRecentlyModified $false
+    }
+    $diagDll2 = (Get-ItemProperty -Path $diagTestHooks -Name TestAggregatorDll -ErrorAction SilentlyContinue).TestAggregatorDll
+    if ($diagDll2) {
+        $fullDiagPath2 = [System.Environment]::ExpandEnvironmentVariables($diagDll2)
+        if (-not (Split-Path $fullDiagPath2 -Parent)) {
+            $fullDiagPath2 = Join-Path "C:\Windows\System32" $fullDiagPath2
+        }
+        $allPaths.Add($fullDiagPath2)
+        $issues = Test-FileAnomalies -FilePath $fullDiagPath2 -ServiceName "DiagTrack_TestHook" -CheckMapping $false
+        Add-Anomaly -ServiceName "DiagTrack (Aggregator)" -FilePath $fullDiagPath2 -Issues $issues -IsRecentlyModified $false
+    }
+}
+
+$winsockPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters"
+if (Test-Path $winsockPath) {
+    $autoDll = (Get-ItemProperty -Path $winsockPath -Name AutodialDLL -ErrorAction SilentlyContinue).AutodialDLL
+    if ($autoDll) {
+        $fullAutoPath = [System.Environment]::ExpandEnvironmentVariables($autoDll)
+        if (-not (Split-Path $fullAutoPath -Parent)) {
+            $fullAutoPath = Join-Path "C:\Windows\System32" $fullAutoPath
+        }
+        $allPaths.Add($fullAutoPath)
+        $issues = Test-FileAnomalies -FilePath $fullAutoPath -ServiceName "Winsock_Autodial" -CheckMapping $false
+        Add-Anomaly -ServiceName "Winsock Autodial DLL" -FilePath $fullAutoPath -Issues $issues -IsRecentlyModified $false
     }
 }
 
 $allPaths | Out-File -FilePath "$outputDir\paths.txt" -Encoding UTF8
 
 Write-Host "=============================================" -ForegroundColor DarkGray
-Write-Host " SERVICE SCANNER" -ForegroundColor Cyan
+Write-Host " SERVICE SCANNER " -ForegroundColor Cyan
 Write-Host " User: $userName" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor DarkGray
 Write-Host ""
