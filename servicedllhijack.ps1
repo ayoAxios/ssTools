@@ -65,6 +65,26 @@ $knownMappings = @{
 $contatoreAnomalie = 0
 $anomalieLista = [System.Collections.Generic.List[PSCustomObject]]::new()
 $modificheRecenti = [System.Collections.Generic.List[string]]::new()
+$allPaths = [System.Collections.Generic.List[string]]::new()
+
+$outputDir = "C:\ss1"
+if (-not (Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+}
+
+function Get-ExecutablePathFromImagePath {
+    param([string]$imagePath)
+    if (-not $imagePath) { return $null }
+    $expanded = [System.Environment]::ExpandEnvironmentVariables($imagePath)
+    if ($expanded -match '^"([^"]+)"') {
+        return $matches[1]
+    }
+    $firstToken = ($expanded -split '\s+')[0]
+    if ($firstToken) {
+        return $firstToken
+    }
+    return $null
+}
 
 foreach ($service in $services) {
     $serviceName = $service.PSChildName
@@ -94,71 +114,88 @@ foreach ($service in $services) {
     } catch {}
 
     $parametersPath = "$servicesPath\$serviceName\Parameters"
-    if (-not (Test-Path $parametersPath)) { continue }
+    if (Test-Path $parametersPath) {
+        $serviceDll = (Get-ItemProperty -Path $parametersPath -Name ServiceDll -ErrorAction SilentlyContinue).ServiceDll
+        if ($serviceDll) {
+            $expandedPath = [System.Environment]::ExpandEnvironmentVariables($serviceDll)
+            if (-not (Split-Path $expandedPath -Parent)) {
+                $expandedPath = Join-Path "C:\Windows\System32" $expandedPath
+            }
+            $allPaths.Add($expandedPath)
 
-    $serviceDll = (Get-ItemProperty -Path $parametersPath -Name ServiceDll -ErrorAction SilentlyContinue).ServiceDll
-    if (-not $serviceDll) { continue }
+            $anomalie = @()
+            $fileItem = Get-Item -Path $expandedPath -ErrorAction SilentlyContinue
 
-    $expandedPath = [System.Environment]::ExpandEnvironmentVariables($serviceDll)
-    if (-not (Split-Path $expandedPath -Parent)) {
-        $expandedPath = Join-Path "C:\Windows\System32" $expandedPath
+            if (-not $fileItem) {
+                $anomalie += "FILE NOT FOUND"
+            } else {
+                $pathNorm = $expandedPath.ToLower()
+                $pathiLegittimi = @(
+                    "$env:SystemRoot\system32",
+                    "$env:SystemRoot\syswow64",
+                    "$env:SystemRoot\system32\spool",
+                    "$env:SystemRoot\winsxs"
+                )
+                $pathOk = $pathiLegittimi | Where-Object { $pathNorm.StartsWith($_.ToLower()) }
+                if (-not $pathOk) { $anomalie += "SUSPICIOUS PATH" }
+
+                $sig = Get-AuthenticodeSignature -FilePath $expandedPath -ErrorAction SilentlyContinue
+                if (-not $sig) {
+                    $anomalie += "SIGNATURE NOT VERIFIABLE"
+                } elseif ($sig.Status -eq "NotSigned") {
+                    $anomalie += "DLL NOT SIGNED"
+                } elseif ($sig.Status -ne "Valid") {
+                    $anomalie += "INVALID SIGNATURE: $($sig.Status)"
+                } elseif ($sig.SignerCertificate.Subject -notlike "*Microsoft*") {
+                    $anomalie += "NON-MICROSOFT SIGNATURE"
+                }
+
+                if ($knownMappings.ContainsKey($serviceName)) {
+                    if ($fileItem.Name.ToLower() -ne $knownMappings[$serviceName].ToLower()) {
+                        $anomalie += "DLL REPLACED (expected: $($knownMappings[$serviceName]))"
+                    }
+                } else {
+                    if ($fileItem.Name -notmatch "\.dll$") {
+                        $anomalie += "ANOMALOUS EXTENSION: $($fileItem.Name)"
+                    }
+                }
+            }
+
+            if ($anomalie.Count -gt 0) {
+                $contatoreAnomalie++
+                $dataModifica = if ($fileItem) { $fileItem.LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy") } else { "N/A (file not found)" }
+                $itemBlock = [PSCustomObject]@{
+                    Servizio = $serviceName
+                    File     = $expandedPath
+                    Modifica = $dataModifica
+                    Stato    = ($anomalie -join " | ")
+                }
+                $anomalieLista.Add($itemBlock)
+            }
+        }
     }
 
-    $anomalie = @()
-    $fileItem = Get-Item -Path $expandedPath -ErrorAction SilentlyContinue
-
-    if (-not $fileItem) {
-        $anomalie += "FILE NOT FOUND"
-    } else {
-        $pathNorm = $expandedPath.ToLower()
-        $pathiLegittimi = @(
-            "$env:SystemRoot\system32",
-            "$env:SystemRoot\syswow64",
-            "$env:SystemRoot\system32\spool",
-            "$env:SystemRoot\winsxs"
-        )
-        $pathOk = $pathiLegittimi | Where-Object { $pathNorm.StartsWith($_.ToLower()) }
-        if (-not $pathOk) { $anomalie += "SUSPICIOUS PATH" }
-
-        $sig = Get-AuthenticodeSignature -FilePath $expandedPath -ErrorAction SilentlyContinue
-        if (-not $sig) {
-            $anomalie += "SIGNATURE NOT VERIFIABLE"
-        } elseif ($sig.Status -eq "NotSigned") {
-            $anomalie += "DLL NOT SIGNED"
-        } elseif ($sig.Status -ne "Valid") {
-            $anomalie += "INVALID SIGNATURE: $($sig.Status)"
-        } elseif ($sig.SignerCertificate.Subject -notlike "*Microsoft*") {
-            $anomalie += "NON-MICROSOFT SIGNATURE"
-        }
-
-        if ($knownMappings.ContainsKey($serviceName)) {
-            if ($fileItem.Name.ToLower() -ne $knownMappings[$serviceName].ToLower()) {
-                $anomalie += "DLL REPLACED (expected: $($knownMappings[$serviceName]))"
+    $imagePathValue = (Get-ItemProperty -Path "$servicesPath\$serviceName" -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
+    if ($imagePathValue) {
+        $exePath = Get-ExecutablePathFromImagePath -imagePath $imagePathValue
+        if ($exePath) {
+            $fullPath = [System.Environment]::ExpandEnvironmentVariables($exePath)
+            if (-not (Split-Path $fullPath -Parent)) {
+                $fullPath = Join-Path "C:\Windows\System32" $fullPath
             }
-        } else {
-            if ($fileItem.Name -notmatch "\.dll$") {
-                $anomalie += "ANOMALOUS EXTENSION: $($fileItem.Name)"
-            }
+            $allPaths.Add($fullPath)
         }
-    }
-
-    if ($anomalie.Count -gt 0) {
-        $contatoreAnomalie++
-        $dataModifica = if ($fileItem) { $fileItem.LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy") } else { "N/A (file not found)" }
-        $itemBlock = [PSCustomObject]@{
-            Servizio = $serviceName
-            File     = $expandedPath
-            Modifica = $dataModifica
-            Stato    = ($anomalie -join " | ")
-        }
-        $anomalieLista.Add($itemBlock)
     }
 }
+
+$allPaths | Out-File -FilePath "$outputDir\paths.txt" -Encoding UTF8
 
 Write-Host "=============================================" -ForegroundColor DarkGray
 Write-Host " SERVICE SCANNER" -ForegroundColor Cyan
 Write-Host " User: $userName" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "All service binary paths written to: $outputDir\paths.txt ($($allPaths.Count) entries)" -ForegroundColor Cyan
 Write-Host ""
 
 if ($contatoreAnomalie -gt 0) {
