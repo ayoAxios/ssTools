@@ -5,7 +5,7 @@ $servicesPath = "HKLM:\SYSTEM\CurrentControlSet\Services"
 $services = Get-ChildItem -Path $servicesPath
 $userName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $timeThreshold = (Get-Date).AddMinutes(-60)
-
+Write-Host "made by _.ayo" -ForegroundColor DarkGray
 $knownMappings = @{
     "AarSvc" = "AarSvc.dll"; "AppHostSvc" = "apphostsvc.dll"; "AppIDSvc" = "appidsvc.dll"; "AppMgmt" = "appmgmts.dll";
     "AppReadiness" = "AppReadiness.dll"; "AppXSvc" = "appxdeploymentserver.dll"; "AudioEndpointBuilder" = "AudioEndpointBuilder.dll";
