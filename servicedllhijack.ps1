@@ -954,4 +954,435 @@ function Scan-WindowsRegistryForDlls {
     
     # 19. Provider Order
     Write-Host "Scanning Provider Order..." -ForegroundColor DarkGray
-    $issues = Scan-RegistryKeyPaths -RegistryPath "HKLM:\SYS... (21 KB left)
+    $issues = Scan-RegistryKeyPaths -RegistryPath "HKLM:\SYSTEM\CurrentControlSet\Control\ProviderOrder" -ValueName "ProviderList" -Context "Provider Order" -ServiceName "ProviderOrder"
+    $allIssues += $issues
+    
+    # 20. DirectShow Filters
+    Write-Host "Scanning DirectShow Filters..." -ForegroundColor DarkGray
+    $filterPaths = @(
+        "HKCR:\CLSID",
+        "HKLM:\SOFTWARE\Classes\CLSID"
+    )
+    foreach ($path in $filterPaths) {
+        try {
+            $clsidKeys = Get-ChildItem -Path $path -ErrorAction SilentlyContinue | Select-Object -First 500
+            $count = 0
+            foreach ($clsid in $clsidKeys) {
+                $count++
+                if ($count -gt 500) { break }
+                $inprocPath = "$($clsid.PSPath)\InprocServer32"
+                $issues = Scan-RegistryKeyPaths -RegistryPath $inprocPath -ValueName "(Default)" -Context "DirectShow Filter - $($clsid.PSChildName)" -ServiceName "DirectShow_$($clsid.PSChildName)"
+                $allIssues += $issues
+            }
+        } catch {
+            # Silently continue
+        }
+    }
+    
+    # 21. KnownDLLs (monitor for tampering)
+    Write-Host "Scanning KnownDLLs..." -ForegroundColor DarkGray
+    $knownDllsPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs"
+    try {
+        $knownDlls = Get-Item -Path $knownDllsPath -ErrorAction SilentlyContinue
+        if ($knownDlls) {
+            $dllValues = $knownDlls.GetValueNames()
+            foreach ($dllName in $dllValues) {
+                $dllValue = $knownDlls.GetValue($dllName, $null)
+                if ($dllValue -and $dllValue -is [string]) {
+                    # Check if it references a non-system path
+                    if ($dllValue -match "\\" -and $dllValue -notmatch "system32") {
+                        $allIssues += "[KnownDLLs] SUSPICIOUS - $dllName = $dllValue (non-standard path)"
+                    }
+                }
+            }
+        }
+    } catch {
+        # Silently continue
+    }
+    
+    # 22. COM Class TreatAs / AutoTreatAs
+    Write-Host "Scanning COM TreatAs redirects..." -ForegroundColor DarkGray
+    $clsidPaths = @(
+        "HKCR:\CLSID",
+        "HKLM:\SOFTWARE\Classes\CLSID"
+    )
+    foreach ($path in $clsidPaths) {
+        try {
+            $clsidKeys = Get-ChildItem -Path $path -ErrorAction SilentlyContinue | Select-Object -First 200
+            foreach ($clsid in $clsidKeys) {
+                $treatAsPath = "$($clsid.PSPath)\TreatAs"
+                $issues = Scan-RegistryKeyPaths -RegistryPath $treatAsPath -ValueName "(Default)" -Context "COM TreatAs - $($clsid.PSChildName)" -ServiceName "COM_TreatAs_$($clsid.PSChildName)"
+                $allIssues += $issues
+                
+                $autoTreatPath = "$($clsid.PSPath)\AutoTreatAs"
+                $issues = Scan-RegistryKeyPaths -RegistryPath $autoTreatPath -ValueName "(Default)" -Context "COM AutoTreatAs - $($clsid.PSChildName)" -ServiceName "COM_AutoTreatAs_$($clsid.PSChildName)"
+                $allIssues += $issues
+            }
+        } catch {
+            # Silently continue
+        }
+    }
+    
+    # 23. COM Elevation Policy
+    Write-Host "Scanning COM Elevation Policy..." -ForegroundColor DarkGray
+    foreach ($path in $clsidPaths) {
+        try {
+            $clsidKeys = Get-ChildItem -Path $path -ErrorAction SilentlyContinue | Select-Object -First 200
+            foreach ($clsid in $clsidKeys) {
+                $elevPath = "$($clsid.PSPath)\Elevation"
+                $issues = Scan-RegistryKeyPaths -RegistryPath $elevPath -ValueName "Enabled" -Context "COM Elevation - $($clsid.PSChildName)" -ServiceName "COM_Elevation_$($clsid.PSChildName)"
+                $allIssues += $issues
+            }
+        } catch {
+            # Silently continue
+        }
+    }
+    
+    # 24. Scheduled Tasks (via registry - tasks can execute rundll32)
+    Write-Host "Scanning Scheduled Tasks (registry)..." -ForegroundColor DarkGray
+    $taskPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks",
+        "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree"
+    )
+    foreach ($taskPath in $taskPaths) {
+        try {
+            $tasks = Get-ChildItem -Path $taskPath -ErrorAction SilentlyContinue
+            foreach ($task in $tasks) {
+                # Check for actions that reference DLLs
+                $actions = $task.GetValue("Actions", $null)
+                if ($actions -and $actions -is [string]) {
+                    if ($actions -match "rundll32\.exe|regsvr32\.exe") {
+                        $allIssues += "[Scheduled Task] SUSPICIOUS DLL execution in task: $($task.PSChildName)"
+                        $allIssues += "  Action: $actions"
+                    }
+                }
+            }
+        } catch {
+            # Silently continue
+        }
+    }
+    
+    # 25. Windows Filtering Platform Callouts
+    Write-Host "Scanning WFP Callouts..." -ForegroundColor DarkGray
+    $wfpPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WFP\Callouts"
+    try {
+        $callouts = Get-ChildItem -Path $wfpPath -ErrorAction SilentlyContinue
+        foreach ($callout in $callouts) {
+            $issues = Scan-RegistryKeyPaths -RegistryPath $callout.PSPath -ValueName "DisplayData" -Context "WFP Callout - $($callout.PSChildName)" -ServiceName "WFP_$($callout.PSChildName)"
+            $allIssues += $issues
+        }
+    } catch {
+        # Silently continue
+    }
+    
+    return $allIssues
+}
+
+# ====== MAIN SCRIPT EXECUTION ======
+
+Write-Host "=============================================" -ForegroundColor DarkGray
+Write-Host " STARTING COMPREHENSIVE DLL SCAN " -ForegroundColor Cyan
+Write-Host "=============================================" -ForegroundColor DarkGray
+Write-Host ""
+
+# Existing service scanning
+Write-Host "Scanning Services..." -ForegroundColor Cyan
+foreach ($service in $services) {
+    $serviceName = $service.PSChildName
+
+    try {
+        $regKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine,
+            [Microsoft.Win32.RegistryView]::Registry64
+        ).OpenSubKey("SYSTEM\CurrentControlSet\Services\$serviceName")
+
+        if ($regKey) {
+            $internalMethod = $regKey.GetType().GetMethod(
+                "InternalGetSubKeyTimestamp",
+                [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance
+            )
+            if ($internalMethod) {
+                $lastWrite = [DateTime]::FromFileTime($internalMethod.Invoke($regKey, $null))
+            } else {
+                $lastWrite = (Get-Item "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -ErrorAction SilentlyContinue).LastWriteTime
+            }
+            $regKey.Close()
+
+            if ($lastWrite -and $lastWrite -ge $timeThreshold) {
+                $modificheRecenti.Add("$serviceName | $($lastWrite.ToString('HH:mm:ss dd/MM/yyyy'))")
+                $recentlyModifiedSet.Add($serviceName)
+            }
+        }
+    } catch {}
+
+    $parametersPath = "$servicesPath\$serviceName\Parameters"
+    if (Test-Path $parametersPath) {
+        $serviceDll = (Get-ItemProperty -Path $parametersPath -Name ServiceDll -ErrorAction SilentlyContinue).ServiceDll
+        if ($serviceDll) {
+            $registryPath = "HKLM\SYSTEM\CurrentControlSet\Services\$serviceName\Parameters\ServiceDll"
+            $fullPath = Resolve-FullPath -Path $serviceDll
+            $filePathOnly = Get-FilePathOnly -Path $serviceDll
+            $csvData.Add([PSCustomObject]@{
+                ServiceName = $serviceName
+                RegistryPath = $registryPath
+                FullCommand = $fullPath
+                FilePath = $filePathOnly
+            })
+            $expandedPath = [System.Environment]::ExpandEnvironmentVariables($serviceDll)
+            if (-not (Split-Path $expandedPath -Parent)) {
+                $expandedPath = Join-Path "C:\Windows\System32" $expandedPath
+            }
+            $issues = Test-FileAnomalies -FilePath $expandedPath -ServiceName $serviceName -CheckMapping $true
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $expandedPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $imagePathValue = (Get-ItemProperty -Path "$servicesPath\$serviceName" -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
+    if ($imagePathValue) {
+        $registryPath = "HKLM\SYSTEM\CurrentControlSet\Services\$serviceName\ImagePath"
+        $fullPath = Resolve-FullPath -Path $imagePathValue
+        $filePathOnly = Get-FilePathOnly -Path $imagePathValue
+        $csvData.Add([PSCustomObject]@{
+            ServiceName = $serviceName
+            RegistryPath = $registryPath
+            FullCommand = $fullPath
+            FilePath = $filePathOnly
+        })
+        
+        $imagePathAnomalies = Test-ImagePathAnomalies -ImagePath $imagePathValue -ServiceName $serviceName
+        if ($imagePathAnomalies.Count -gt 0) {
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            $global:contatoreAnomalie++
+            $expandedPath = [System.Environment]::ExpandEnvironmentVariables($imagePathValue)
+            $modTime = if (Test-Path $expandedPath) { (Get-Item $expandedPath).LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy") } else { "N/A" }
+            $item = [PSCustomObject]@{
+                Servizio = $serviceName
+                File     = "ImagePath: $imagePathValue"
+                Modifica = $modTime
+                Stato    = ($imagePathAnomalies -join " | ")
+            }
+            $global:anomalieLista.Add($item)
+        }
+        
+        $exePath = Get-ExecutablePathFromImagePath -imagePath $imagePathValue
+        if ($exePath) {
+            $fullPath = [System.Environment]::ExpandEnvironmentVariables($exePath)
+            if (-not (Split-Path $fullPath -Parent)) {
+                $fullPath = Join-Path "C:\Windows\System32" $fullPath
+            }
+            $issues = Test-FileAnomalies -FilePath $fullPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $failCmd = (Get-ItemProperty -Path "$servicesPath\$serviceName" -Name FailureCommand -ErrorAction SilentlyContinue).FailureCommand
+    if ($failCmd) {
+        $registryPath = "HKLM\SYSTEM\CurrentControlSet\Services\$serviceName\FailureCommand"
+        $fullPath = Resolve-FullPath -Path $failCmd
+        $filePathOnly = Get-FilePathOnly -Path $failCmd
+        $csvData.Add([PSCustomObject]@{
+            ServiceName = $serviceName
+            RegistryPath = $registryPath
+            FullCommand = $fullPath
+            FilePath = $filePathOnly
+        })
+        
+        $exeFromFail = Get-ExecutablePathFromImagePath -imagePath $failCmd
+        if ($exeFromFail) {
+            $fullFailPath = [System.Environment]::ExpandEnvironmentVariables($exeFromFail)
+            if (-not (Split-Path $fullFailPath -Parent)) {
+                $fullFailPath = Join-Path "C:\Windows\System32" $fullFailPath
+            }
+            $issues = Test-FileAnomalies -FilePath $fullFailPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullFailPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $perfPath = "$servicesPath\$serviceName\Performance"
+    if (Test-Path $perfPath) {
+        $perfLib = (Get-ItemProperty -Path $perfPath -Name Library -ErrorAction SilentlyContinue).Library
+        if ($perfLib) {
+            $registryPath = "HKLM\SYSTEM\CurrentControlSet\Services\$serviceName\Performance\Library"
+            $fullPath = Resolve-FullPath -Path $perfLib
+            $filePathOnly = Get-FilePathOnly -Path $perfLib
+            $csvData.Add([PSCustomObject]@{
+                ServiceName = $serviceName
+                RegistryPath = $registryPath
+                FullCommand = $fullPath
+                FilePath = $filePathOnly
+            })
+            
+            $fullPerfPath = [System.Environment]::ExpandEnvironmentVariables($perfLib)
+            if (-not (Split-Path $fullPerfPath -Parent)) {
+                $fullPerfPath = Join-Path "C:\Windows\System32" $fullPerfPath
+            }
+            $issues = Test-FileAnomalies -FilePath $fullPerfPath -ServiceName $serviceName -CheckMapping $false
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath $fullPerfPath -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+
+    $acl = Get-Acl -Path "$servicesPath\$serviceName" -ErrorAction SilentlyContinue
+    if ($acl) {
+        $writeAccess = $false
+        foreach ($access in $acl.Access) {
+            if ($access.IdentityReference -match "BUILTIN\\Users|Everyone|NT AUTHORITY\\Authenticated Users") {
+                if ($access.RegistryRights -match "WriteKey|SetValue|CreateSubKey") {
+                    $writeAccess = $true
+                    break
+                }
+            }
+        }
+        if ($writeAccess) {
+            $issues = @("WEAK REGISTRY PERMISSIONS – NON-ADMIN CAN MODIFY")
+            $isRecent = $recentlyModifiedSet.Contains($serviceName)
+            Add-Anomaly -ServiceName $serviceName -FilePath "N/A (registry key)" -Issues $issues -IsRecentlyModified $isRecent
+        }
+    }
+}
+
+# ====== NEW: Run comprehensive registry scanning ======
+Write-Host ""
+Write-Host "Scanning Additional Registry Locations for DLLs..." -ForegroundColor Cyan
+$additionalIssues = Scan-WindowsRegistryForDlls
+
+# Add any discovered issues to anomalies list
+foreach ($issue in $additionalIssues) {
+    # Parse the issue format: "[Context] message"
+    if ($issue -match '^\[([^\]]+)\]\s*(.*)') {
+        $context = $matches[1]
+        $message = $matches[2]
+        $global:contatoreAnomalie++
+        $item = [PSCustomObject]@{
+            Servizio = "RegistryScan"
+            File     = $context
+            Modifica = "N/A"
+            Stato    = $message
+        }
+        $global:anomalieLista.Add($item)
+    } else {
+        # Fallback for unformatted issues
+        $global:contatoreAnomalie++
+        $item = [PSCustomObject]@{
+            Servizio = "RegistryScan"
+            File     = "Registry"
+            Modifica = "N/A"
+            Stato    = $issue
+        }
+        $global:anomalieLista.Add($item)
+    }
+}
+
+# DiagTrack test hooks (existing)
+$diagTestHooks = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\TestHooks"
+if (Test-Path $diagTestHooks) {
+    $diagDll1 = (Get-ItemProperty -Path $diagTestHooks -Name TestUndockedAggregatorDll -ErrorAction SilentlyContinue).TestUndockedAggregatorDll
+    if ($diagDll1) {
+        $registryPath = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\TestHooks\TestUndockedAggregatorDll"
+        $fullPath = Resolve-FullPath -Path $diagDll1
+        $filePathOnly = Get-FilePathOnly -Path $diagDll1
+        $csvData.Add([PSCustomObject]@{
+            ServiceName = "DiagTrack_TestHook"
+            RegistryPath = $registryPath
+            FullCommand = $fullPath
+            FilePath = $filePathOnly
+        })
+        
+        $fullDiagPath = [System.Environment]::ExpandEnvironmentVariables($diagDll1)
+        if (-not (Split-Path $fullDiagPath -Parent)) {
+            $fullDiagPath = Join-Path "C:\Windows\System32" $fullDiagPath
+        }
+        $issues = Test-FileAnomalies -FilePath $fullDiagPath -ServiceName "DiagTrack_TestHook" -CheckMapping $false
+        Add-Anomaly -ServiceName "DiagTrack (Undocked)" -FilePath $fullDiagPath -Issues $issues -IsRecentlyModified $false
+    }
+    $diagDll2 = (Get-ItemProperty -Path $diagTestHooks -Name TestAggregatorDll -ErrorAction SilentlyContinue).TestAggregatorDll
+    if ($diagDll2) {
+         $registryPath = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\TestHooks\TestAggregatorDll"
+        $fullPath = Resolve-FullPath -Path $diagDll2
+        $filePathOnly = Get-FilePathOnly -Path $diagDll2
+        $csvData.Add([PSCustomObject]@{
+            ServiceName = "DiagTrack_TestHook"
+            RegistryPath = $registryPath
+            FullCommand = $fullPath
+            FilePath = $filePathOnly
+        })
+        
+        $fullDiagPath2 = [System.Environment]::ExpandEnvironmentVariables($diagDll2)
+        if (-not (Split-Path $fullDiagPath2 -Parent)) {
+            $fullDiagPath2 = Join-Path "C:\Windows\System32" $fullDiagPath2
+        }
+        $issues = Test-FileAnomalies -FilePath $fullDiagPath2 -ServiceName "DiagTrack_TestHook" -CheckMapping $false
+        Add-Anomaly -ServiceName "DiagTrack (Aggregator)" -FilePath $fullDiagPath2 -Issues $issues -IsRecentlyModified $false
+    }
+}
+
+# Winsock (existing)
+$winsockPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters"
+if (Test-Path $winsockPath) {
+    $autoDll = (Get-ItemProperty -Path $winsockPath -Name AutodialDLL -ErrorAction SilentlyContinue).AutodialDLL
+    if ($autoDll) {
+        $registryPath = "HKLM\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters\AutodialDLL"
+        $fullPath = Resolve-FullPath -Path $autoDll
+        $filePathOnly = Get-FilePathOnly -Path $autoDll
+        $csvData.Add([PSCustomObject]@{
+            ServiceName = "Winsock_Autodial"
+            RegistryPath = $registryPath
+            FullCommand = $fullPath
+            FilePath = $filePathOnly
+        })
+        
+        $fullAutoPath = [System.Environment]::ExpandEnvironmentVariables($autoDll)
+        if (-not (Split-Path $fullAutoPath -Parent)) {
+            $fullAutoPath = Join-Path "C:\Windows\System32" $fullAutoPath
+        }
+        $issues = Test-FileAnomalies -FilePath $fullAutoPath -ServiceName "Winsock_Autodial" -CheckMapping $false
+        Add-Anomaly -ServiceName "Winsock Autodial DLL" -FilePath $fullAutoPath -Issues $issues -IsRecentlyModified $false
+    }
+}
+
+# ====== OUTPUT ======
+
+$csvData | Export-Csv -Path "$outputDir\service_paths.csv" -NoTypeInformation -Encoding UTF8
+
+Write-Host "=============================================" -ForegroundColor DarkGray
+Write-Host " SERVICE SCANNER COMPLETE " -ForegroundColor Cyan
+Write-Host " User: $userName" -ForegroundColor Cyan
+Write-Host "=============================================" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "CSV file with registry paths and binary paths written to: $outputDir\service_paths.csv ($($csvData.Count) entries)" -ForegroundColor Cyan
+Write-Host ""
+
+if ($contatoreAnomalie -gt 0) {
+    Write-Host "ANOMALIES DETECTED: $contatoreAnomalie" -ForegroundColor Red
+    Write-Host ""
+    foreach ($item in $anomalieLista) {
+        Write-Host "[$($item.Servizio)]" -ForegroundColor Yellow
+        Write-Host "  File     : $($item.File)"
+        Write-Host "  Modified : $($item.Modifica)"
+        Write-Host "  Status   : $($item.Stato)" -ForegroundColor Red
+        Write-Host ""
+    }
+} else {
+    Write-Host "No anomalies detected." -ForegroundColor Green
+    Write-Host ""
+}
+
+Write-Host "---------------------------------------------" -ForegroundColor DarkGray
+if ($modificheRecenti.Count -gt 0) {
+    Write-Host "REGISTRY MODIFIED IN LAST 60 MIN - SUSPICIOUS ($($modificheRecenti.Count)):" -ForegroundColor Yellow
+    foreach ($m in $modificheRecenti) {
+        Write-Host "  $m"
+    }
+} else {
+    Write-Host "No recent registry modifications (last 60 min)." -ForegroundColor Green
+}
+
+Write-Host "---------------------------------------------" -ForegroundColor DarkGray
+Write-Host "Scan: $(Get-Date -Format 'HH:mm:ss dd/MM/yyyy')" -ForegroundColor Cyan
+Write-Host ""
+
+Write-Host "Press any key to close..." -ForegroundColor Cyan
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
